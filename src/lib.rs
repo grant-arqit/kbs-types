@@ -104,6 +104,13 @@ pub enum TeePubKey {
         x: String,
         y: String,
     },
+    /// Algorithm Key Pair (AKP) key type for PQC algorithm support as per
+    /// [draft-ietf-jose-pqc-kem-05](https://datatracker.ietf.org/doc/draft-ietf-jose-pqc-kem/)
+    AKP {
+        alg: String,
+        #[serde(rename = "pub")]
+        public_key: String,
+    },
 }
 
 #[cfg(feature = "std")]
@@ -150,6 +157,20 @@ impl From<&TeePubKey> for ear::RawValue {
                 map.push((
                     RawValue::String("y".to_string()),
                     RawValue::String(y.clone()),
+                ));
+            }
+            TeePubKey::AKP { alg, public_key } => {
+                map.push((
+                    RawValue::String("kty".to_string()),
+                    RawValue::String("AKP".to_string()),
+                ));
+                map.push((
+                    RawValue::String("alg".to_string()),
+                    RawValue::String(alg.clone()),
+                ));
+                map.push((
+                    RawValue::String("pub".to_string()),
+                    RawValue::String(public_key.clone()),
                 ));
             }
         }
@@ -619,6 +640,44 @@ mod tests {
     }
 
     #[test]
+    fn parse_attestation_akp() {
+        let data = r#"
+        {
+            "runtime-data": {
+                "nonce": "test_nonce",
+                "tee-pubkey": {
+                    "kty": "AKP",
+                    "alg": "fakealgorithm",
+                    "pub": "fakepublickey"
+                }
+            },
+            "tee-evidence": {
+                "primary_evidence": "test_primary_evidence",
+                "additional_evidence": "test_additional_evidence"
+            }
+        }"#;
+
+        let attestation: Attestation = serde_json::from_str(data).unwrap();
+        let tee_pubkey = attestation.runtime_data.tee_pubkey;
+
+        let TeePubKey::AKP { alg, public_key } = tee_pubkey else {
+            panic!("Must be a AKP key");
+        };
+
+        assert_eq!(attestation.runtime_data.nonce, "test_nonce");
+        assert_eq!(alg, "fakealgorithm");
+        assert_eq!(public_key, "fakepublickey");
+        assert_eq!(
+            attestation.tee_evidence.primary_evidence,
+            "test_primary_evidence"
+        );
+        assert_eq!(
+            attestation.tee_evidence.additional_evidence,
+            "test_additional_evidence"
+        );
+    }
+
+    #[test]
     fn parse_error_information() {
         let data = r#"
         {
@@ -651,6 +710,15 @@ mod tests {
             alg: "test".to_string(),
             x: "test".to_string(),
             y: "test".to_string(),
+        };
+        let ear_raw: RawValue = (&tpk).into();
+        let json_str = serde_json::to_string(&ear_raw).unwrap();
+        assert_eq!(json_str, serde_json::to_string(&tpk).unwrap());
+
+        // AKP key.
+        let tpk = TeePubKey::AKP {
+            alg: "test".to_string(),
+            public_key: "test".to_string(),
         };
         let ear_raw: RawValue = (&tpk).into();
         let json_str = serde_json::to_string(&ear_raw).unwrap();
